@@ -15,10 +15,15 @@ I got the help of chatgpt with these comments :) )
 
 ## Project Structure
 honeypot/
+
 ├── honeypy.py # Entry point (main script with argparse)
+
 ├── ssh_honeypot.py # Honeypot server implementation
+
 ├── static/ # Contains server.key (not uploaded to GitHub)
+
 ├── log_files/ # Stores logs (ignored in .gitignore)
+
 
 ## Installation
 1. Clone the repository :
