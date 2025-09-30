@@ -1,0 +1,6 @@
+.venv/
+static/server.key
+static/server.key.pub
+__pycache__/
+*.pyc
+*.log

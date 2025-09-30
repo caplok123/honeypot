@@ -1,0 +1,183 @@
+Honeypot Project Revision Notes
+===============================
+
+Project Structure:
+------------------
+honeypot/
+├── .venv
+├── __pycache__
+├── log_files/
+├── tl;dr.txt
+├── static/
+│   ├── server.key
+│   └── server.key.pub
+├── honeypy.py       # Main entry file with CLI arguments
+└── ssh_honeypot.py  # Main SSH honeypot code
+
+---
+
+Libraries Used:
+---------------
+1. logging
+   - Provides logging utilities.
+   - RotatingFileHandler: Logs to files with automatic rotation when size limit is reached.
+   - logging.Formatter: Defines format of logs.
+   - Levels: DEBUG < INFO < WARNING < ERROR < CRITICAL
+
+2. paramiko
+   - Python library for SSH2 connections.
+   - Provides SSH client and server functionality.
+   - ServerInterface: Base class for SSH server implementation.
+   - Transport: Handles encrypted SSH connection.
+   - RSAKey: Used for server host key authentication.
+
+3. threading
+   - Allows running multiple client connections concurrently using threads.
+
+4. socket
+   - Provides TCP socket connections for network communication.
+
+5. time
+   - Used for delays (e.g., in tarpit mode).
+
+6. pathlib
+   - Provides Path objects to handle filesystem paths.
+   - __file__: Python built-in, points to current script path.
+   - Path(__file__).parent: gets directory containing current script.
+
+7. argparse
+   - Parses command line arguments for running honeypot.
+
+---
+
+Key Functions and Classes:
+-------------------------
+
+1. Server(paramiko.ServerInterface)
+   - SSH server class to define behavior for incoming connections.
+   - Important Methods:
+     a) check_channel_request(kind, chanid)
+        - Called when client requests a channel.
+        - Return paramiko.OPEN_SUCCEEDED to allow session channels.
+     b) get_allowed_auths(username)
+        - Returns authentication methods allowed (e.g., "password").
+     c) check_auth_password(username, password)
+        - Called when client tries password authentication.
+        - Logs username/password attempt.
+        - Checks if credentials match honeypot's optional allowed credentials.
+     d) check_channel_shell_request(channel)
+        - Called when client requests interactive shell.
+        - Returns True to allow shell session.
+     e) check_channel_pty_request(channel, ...)
+        - Returns True to allow pseudo-terminal.
+     f) check_channel_exec_request(channel, command)
+        - Returns True; allows executing commands (even if fake).
+
+2. emulated_shell(channel, client_ip)
+   - Implements fake shell for connected clients.
+   - Loops over each character typed by client:
+     - Echoes character back.
+     - Builds command buffer.
+     - On Enter (\r):
+       - Checks known commands ('pwd', 'whoami', 'ls', 'cat jumpbox1.conf', 'exit').
+       - Responds with fake outputs.
+       - Logs executed command and client IP to cmd_audits.log.
+     - Handles Ctrl+C (\x03) to close session.
+     - Handles Backspace (\x7f) to remove last character from buffer and erase on terminal:
+         channel.send(b'\b \b')
+   - Notes:
+     - Only minimal emulation; arrow keys not supported (escape sequences required for that).
+
+3. client_handle(client, addr, username, password, tarpit=False)
+   - Handles each SSH client connection.
+   - Steps:
+     1. Creates paramiko.Transport from socket.
+     2. Sets server banner (SSH_BANNER).
+     3. Adds server host key.
+     4. Starts SSH server using Server instance.
+     5. Accepts channel with timeout.
+     6. Sends welcome banner or tarpit banner.
+     7. Passes channel to emulated_shell.
+     8. Handles exceptions.
+     9. Closes channel and transport at the end.
+   - Parameters:
+     - client: socket object.
+     - addr: client IP/port tuple.
+     - username/password: optional honeypot credentials.
+     - tarpit: boolean, if True sends endless banner to slow down attacker.
+
+4. honeypot(address, port, username, password, tarpit=False)
+   - Main server loop.
+   - Creates TCP socket, binds to address/port.
+   - Listens for connections (max 100 concurrent).
+   - Accepts connections and starts new **daemon threads** for each client using client_handle.
+   - Daemon threads ensure server continues accepting other clients.
+
+5. CLI (honeypy.py)
+   - Uses argparse to parse:
+     - -a / --address : host IP
+     - -p / --port : listening port
+     - -u / --username : optional allowed username
+     - -w / --password : optional allowed password
+     - -t / --tarpit : flag for endless banner
+   - Calls honeypot() with parsed arguments.
+
+---
+
+Logging Setup:
+--------------
+- cmd_audits.log : logs all commands executed in emulated shell.
+- creds_audits.log : logs all username/password attempts and client IP.
+- RotatingFileHandler used to limit file size and keep backups (5 backups, 2KB max each).
+
+---
+
+Bytes Handling and Escapes:
+---------------------------
+- b"" : bytes literal.
+- char from channel.recv() is bytes; must be compared with b'\r', b'\x03', b'\x7f', etc.
+- command.decode('utf-8') : convert bytes to string for logging.
+- Backslash issues:
+   - Use raw strings br"..." or forward slashes "/" in paths to avoid unicodeescape errors.
+- .strip() : removes leading/trailing whitespace or special characters from bytes/strings.
+
+---
+
+Control Keys in Emulated Shell:
+-------------------------------
+- Enter (\r): submits command.
+- Backspace (\x7f): deletes last character, visually erased with '\b \b'.
+- Ctrl+C (\x03): closes session.
+- Arrow keys: not implemented (multi-byte escape sequences, would require cursor tracking).
+
+---
+
+Tips Learned:
+-------------
+1. Use threading.Thread with daemon=True to allow server to continue accepting new clients while handling existing ones.
+2. paramiko.Transport.local_version sets SSH banner to identify server to client.
+3. Use Path(__file__).parent to build paths independent of current working directory.
+4. Always handle bytes carefully, decode when logging, encode when sending responses.
+5. SSH server in honeypot doesn't actually execute commands; it emulates responses.
+
+---
+
+Potential Improvements:
+-----------------------
+- Support arrow key navigation (requires handling escape sequences and cursor position).
+- More realistic shell outputs (fake file system, etc.).
+- HTTPS/web honeypot (like your commented imports) integration.
+- Dashboard to visualize logs.
+
+---
+
+Summary:
+--------
+This project demonstrates:
+- Setting up a simple SSH server honeypot.
+- Logging credentials and command attempts.
+- Using Python libraries: paramiko, socket, threading, logging, argparse.
+- Handling bytes, control characters, and basic terminal emulation.
+- Using command line arguments to run the honeypot dynamically.
+
+It is modular: honeypy.py handles CLI, ssh_honeypot.py handles server functionality.
