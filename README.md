@@ -2,6 +2,9 @@
 
 This is my first cybersecurity project: a simple SSH honeypot built in Python using **Paramiko**.  
 It emulates a fake SSH server that accepts connections, logs credentials, and provides a small fake shell.
+(you'll find in this work a lot of comments in the code that will help you understand in each step what's happening. 
+It helps me keep track and memorize the functionalities of certain parts of the code.
+I got the help of chatgpt with these comments :) )
 
 ## Features
 - Logs username and password attempts
